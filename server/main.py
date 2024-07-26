@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Literal, Optional
 
 
-#init app
+# init app
 app = FastAPI()
 
 app.add_middleware(
@@ -15,6 +15,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # used to handle the socket connections
 class ConnectionManager:
@@ -32,21 +33,25 @@ class ConnectionManager:
         for con in self.active_connections:
             await con.send_text(message)
 
+
 manager = ConnectionManager()
 
 # some pydantic models for the wizard game
-SuitType =  Literal['heart', 'diamonds', 'clubs', 'spades', 'wizard', 'jester']
+SuitType = Literal["heart", "diamonds", "clubs", "spades", "wizard", "jester"]
+
 
 class Card(BaseModel):
     value: int
     suit: SuitType
 
+
 class Player(BaseModel):
     id: str
     name: str
-    score: int 
+    score: int
     hand: Optional[List[Card]] = None
     bid: Optional[int] = None
+
 
 class GameState(BaseModel):
     players: List[Player]
@@ -59,14 +64,19 @@ class GameState(BaseModel):
 game_state = GameState(players=[], roundNumber=0)
 
 # create deck of cards, jesters have value 0 and wizards 14 for easy evaluation
-suit_options: List[SuitType] = ['heart', 'diamonds', 'clubs', 'spades']
+suit_options: List[SuitType] = ["heart", "diamonds", "clubs", "spades"]
 deck = [Card(value=value, suit=suit) for value in range(1, 13) for suit in suit_options]
-jesters, wizards = [Card(value=0, suit='jester')]*4, [Card(value=14, suit='wizard')]*4
+jesters, wizards = (
+    [Card(value=0, suit="jester")] * 4,
+    [Card(value=14, suit="wizard")] * 4,
+)
 deck = deck + jesters + wizards
+
 
 @app.get("/")
 async def root():
     return deck
+
 
 @app.websocket("/ws/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
@@ -83,7 +93,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
         message = {"player_id": player_id, "message": "disconnected"}
         await manager.broadcast(json.dumps(message))
 
+
 @app.get("/gameState")
 async def gameState():
     return game_state
-
