@@ -46,22 +46,28 @@ class Card(BaseModel):
 
 
 class Player(BaseModel):
-    id: str
     name: str
     score: int
     hand: Optional[List[Card]] = None
     bid: Optional[int] = None
+    ready: bool
 
 
 class GameState(BaseModel):
-    players: List[Player]
+    players: dict
     roundNumber: int
     currentPlayerTurn: Optional[Player] = None
     trumpSuit: Optional[SuitType] = None
 
+    def add_player(self, id: str):
+        self.players[id] = Player(name="name", score=0, ready=False)
+
+    def remove_player(self, id: str):
+        del self.players[id]
+
 
 # initial game state
-game_state = GameState(players=[], roundNumber=0)
+game_state = GameState(players={}, roundNumber=0)
 
 # create deck of cards, jesters have value 0 and wizards 14 for easy evaluation
 suit_options: List[SuitType] = ["heart", "diamonds", "clubs", "spades"]
@@ -81,16 +87,21 @@ async def root():
 @app.websocket("/ws/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(websocket)
-    player = Player(id=player_id, name="name", score=0)
-    game_state.players.append(player)
     try:
         while True:
             data = await websocket.receive_text()
-            message = {"player_id": player_id, "message": data}
-            await manager.broadcast(json.dumps(message))
+            match data:
+                case "connected":  # send by websocket client when it connects
+                    game_state.add_player(player_id)
+                case "ready":
+                    pass
+
+            await manager.broadcast(game_state.model_dump_json())
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        message = {"player_id": player_id, "message": "disconnected"}
+        game_state.remove_player(player_id)
+        message = {"playerId": player_id, "message": "disconnected"}
         await manager.broadcast(json.dumps(message))
 
 

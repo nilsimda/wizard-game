@@ -1,87 +1,52 @@
-import React, {useState, useEffect, useRef} from "react";
+import React, { useState, useEffect } from "react";
+import './index.css';
 import './App.css';
+import CardDeck from './components/CardDeck';
 
 function App() {
-  const [clientId, setClientId] = useState(
+  const [playerId, _] = useState(
     Math.floor(new Date().getTime() / 1000)
   );
-  const [chatHistory, setChat] = useState([]);
-  const [isOnline, setIsOnline] = useState(false);
-  const [textValue, setTextValue] = useState("");
   const [websckt, setWebsckt] = useState();
+  const [gamestate, setGamestate] = useState();
 
-  const [message, setMessage] = useState([]);
-  const [messages, setMessages] = useState([]);
 
   useEffect(() => {
-    const url = "ws://localhost:8000/ws/" + clientId;
+    const url = "ws://localhost:8000/ws/" + playerId;
     const ws = new WebSocket(url);
 
-    ws.onopen = (_event) => {
-      ws.send("Connect")
-    };
+    ws.onopen = (_event) => { ws.send("connected") };
 
-    ws.onmessage = (e) => {
+    ws.onmessage = (e) => { //server sends gameState if it changes
       const message = JSON.parse(e.data);
-      setMessages(prevMessages => [...prevMessages, message]);
+      setGamestate(message);
     };
 
     setWebsckt(ws);
+
     return () => ws.close();
 
+  }, [playerId]);
 
-  }, [clientId]);
-
-  const sendMessage = () => {
+  function sendMessage(message) {
     websckt.send(message);
-    websckt.onmessage = (e) => {
-      const message = JSON.parse(e.data);
-      setMessages(prevMessages => [...prevMessages, message]);
-    };
-    setMessage([]);
   };
+
+  const cards = [
+    { suit: 'hearts', value: 'A' },
+    { suit: 'spades', value: 'K' },
+    { suit: 'diamonds', value: 'Q' },
+    { suit: 'clubs', value: 'J' },
+    { suit: 'W', value: '' },
+    { suit: 'J', value: '' },
+  ];
 
   return (
     <div className="container">
       <h1>Chat</h1>
-      <h2>Your client id: {clientId} </h2>
-      <div className="chat-container">
-        <div className="chat">
-          {messages.map((value, index) => {
-            if (value.clientId === clientId) {
-              return (
-                <div key={index} className="my-message-container">
-                  <div className="my-message">
-                    <p className="client">client id : {clientId}</p>
-                    <p className="message">{value.message}</p>
-                  </div>
-                </div>
-              );
-            } else {
-              return (
-                <div key={index} className="another-message-container">
-                  <div className="another-message">
-                    <p className="client">client id : {clientId}</p>
-                    <p className="message">{value.message}</p>
-                  </div>
-                </div>
-              );
-            }
-          })}
-        </div>
-        <div className="input-chat-container">
-          <input
-            className="input-chat"
-            type="text"
-            placeholder="Chat message ..."
-            onChange={(e) => setMessage(e.target.value)}
-            value={message}
-          ></input>
-          <button className="submit-chat" onClick={sendMessage}>
-            Send
-          </button>
-        </div>
-      </div>
+      <h2>Your player id: {playerId} </h2>
+      <pre>{JSON.stringify(gamestate, null, 2)}</pre>
+      <CardDeck cards={cards} />
     </div>
   );
 
