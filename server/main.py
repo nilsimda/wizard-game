@@ -2,7 +2,7 @@ import random
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Dict
 
 
 # init app
@@ -59,13 +59,13 @@ class GameState(BaseModel):
     currentPlayerTurn: Optional[Player] = None
     trumpSuit: Optional[SuitType] = None
 
-    def add_player(self, id: str):
+    def add_player(self, id: str) -> None:
         self.players[id] = Player(name="name", score=0, ready=False)
 
-    def remove_player(self, id: str):
+    def remove_player(self, id: str) -> None:
         del self.players[id]
 
-    def all_ready(self):
+    def all_ready(self) -> bool:
         return all(player.ready for player in self.players.values())
 
     def deal_cards(self, deck: List[Card]):
@@ -77,6 +77,26 @@ class GameState(BaseModel):
         for i, player in enumerate(self.players.values()):
             start = i * self.roundNumber
             player.hand = hands[start : start + self.roundNumber]
+
+    def eval_round(
+        self, played_cards: Dict[int, Card], player_order: Dict[int, Player]
+    ) -> Player:
+        played_suits = list(map(lambda c: c.suit, played_cards.values()))
+
+        winning_suit = (
+            "wizard"
+            if "wizard" in played_suits
+            else (
+                self.trumpSuit
+                if self.trumpSuit in played_suits
+                else played_cards[0].suit
+            )
+        )
+        winning_n = min(
+            (n for n, card in played_cards.items() if card.suit == winning_suit)
+        )
+
+        return player_order[winning_n]
 
 
 # initial game state
