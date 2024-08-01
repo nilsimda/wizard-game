@@ -5,7 +5,7 @@ export default function CardDeck({ cards }) {
   return (
     <div className="flex items-center justify-center min-h-screen bg-green-700 p-4">
       <div className="flex overflow-x-auto p-4">
-        {cards.map((card, index) => (
+        {cards?.map((card, index) => (
           <div
             key={`${card.suit}-${card.value}`}
             className="inline-block"

@@ -1,4 +1,4 @@
-import json
+import random
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -37,7 +37,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # some pydantic models for the wizard game
-SuitType = Literal["heart", "diamonds", "clubs", "spades", "wizard", "jester"]
+SuitType = Literal["hearts", "diamonds", "clubs", "spades", "wizard", "jester"]
 
 
 class Card(BaseModel):
@@ -65,12 +65,25 @@ class GameState(BaseModel):
     def remove_player(self, id: str):
         del self.players[id]
 
+    def all_ready(self):
+        return all(player.ready for player in self.players.values())
+
+    def deal_cards(self, deck: List[Card]):
+        hands = random.sample(
+            deck,
+            len(self.players) * self.roundNumber + 1,  # +1 for trump Card
+        )
+        self.trumpSuit = hands.pop().suit
+        for i, player in enumerate(self.players.values()):
+            start = i * self.roundNumber
+            player.hand = hands[start : start + self.roundNumber]
+
 
 # initial game state
 game_state = GameState(players={}, roundNumber=0)
 
 # create deck of cards, jesters have value 0 and wizards 14 for easy evaluation
-suit_options: List[SuitType] = ["heart", "diamonds", "clubs", "spades"]
+suit_options: List[SuitType] = ["hearts", "diamonds", "clubs", "spades"]
 deck = [Card(value=value, suit=suit) for value in range(1, 13) for suit in suit_options]
 jesters, wizards = (
     [Card(value=0, suit="jester")] * 4,
@@ -93,16 +106,20 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             match data:
                 case "connected":  # send by websocket client when it connects
                     game_state.add_player(player_id)
-                case "ready":
-                    pass
+                case "ready":  # a player is ready to start the next round
+                    game_state.players[player_id].ready = True
+                    if game_state.all_ready():
+                        game_state.roundNumber += 1
+                        for player in game_state.players.values():
+                            player.ready = False
+                        game_state.deal_cards(deck)
 
             await manager.broadcast(game_state.model_dump_json())
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         game_state.remove_player(player_id)
-        message = {"playerId": player_id, "message": "disconnected"}
-        await manager.broadcast(json.dumps(message))
+        await manager.broadcast(game_state.model_dump_json())
 
 
 @app.get("/gameState")
