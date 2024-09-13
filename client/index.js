@@ -1,75 +1,52 @@
-const suits = ['♠', '♥', '♦', '♣'];
-        const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-        let deck = [];
-        let playerHand = [];
-        let trumpCard;
+const playerId = Math.random().toString(36).substr(2, 9);
+let socket;
 
-        function createDeck() {
-            deck = [];
-            for (let suit of suits) {
-                for (let value of values) {
-                    deck.push({ suit, value });
-                }
-            }
-            // Add Wizard (Z) and Jester (N) cards
-            deck.push({ suit: 'W', value: 'Z' }, { suit: 'W', value: 'Z' }, { suit: 'W', value: 'Z' }, { suit: 'W', value: 'Z' });
-            deck.push({ suit: 'J', value: 'N' }, { suit: 'J', value: 'N' }, { suit: 'J', value: 'N' }, { suit: 'J', value: 'N' });
-        }
+function connectWebSocket() {
+  socket = new WebSocket(`ws://localhost:8000/ws/${playerId}`);
 
-        function shuffleDeck() {
-            for (let i = deck.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [deck[i], deck[j]] = [deck[j], deck[i]];
-            }
-        }
+  socket.onopen = function (e) {
+    document.getElementById('connection-status').textContent = 'Connected';
+    document.getElementById('ready-button').style.display = 'inline-block';
+  };
 
-        function dealCards(numCards) {
-            playerHand = deck.splice(0, numCards);
-            trumpCard = deck.pop();
-            renderPlayerHand();
-            renderTrumpCard();
-        }
+  socket.onmessage = function (event) {
+    const data = JSON.parse(event.data);
+    console.log(data);
+    if (data.hand) {
+      displayHand(data.hand);
+      document.getElementById('ready-button').style.display = 'none';
+    }
+  };
 
-        function renderPlayerHand() {
-            const playerHandElement = document.getElementById('playerHand');
-            playerHandElement.innerHTML = '';
-            for (let card of playerHand) {
-                const cardElement = document.createElement('div');
-                cardElement.className = 'card';
-                cardElement.textContent = `${card.value}${card.suit}`;
-                cardElement.onclick = () => playCard(card);
-                playerHandElement.appendChild(cardElement);
-            }
-        }
+  socket.onclose = function (event) {
+    document.getElementById('connection-status').textContent = 'Disconnected, make sure the server is running';
+    setTimeout(connectWebSocket, 1000);
+  };
 
-        function renderTrumpCard() {
-            const trumpCardElement = document.getElementById('trumpCard');
-            trumpCardElement.innerHTML = '';
-            const cardElement = document.createElement('div');
-            cardElement.className = 'card';
-            cardElement.textContent = `${trumpCard.value}${trumpCard.suit}`;
-            trumpCardElement.appendChild(cardElement);
-        }
+  socket.onerror = function (error) {
+    console.log(`WebSocket Error: ${error}`);
+  };
+}
 
-        function playCard(card) {
-            const playAreaElement = document.getElementById('playArea');
-            const cardElement = document.createElement('div');
-            cardElement.className = 'card';
-            cardElement.textContent = `${card.value}${card.suit}`;
-            playAreaElement.appendChild(cardElement);
+function displayHand(hand) {
+  const handContainer = document.getElementById('hand');
+  handContainer.innerHTML = '';
+  hand.forEach(card => {
+    const cardElement = document.createElement('div');
+    cardElement.className = 'card';
+    cardElement.style.backgroundColor = card.suit;
+    cardElement.innerHTML = `
+            <div>${card.value}</div>
+            <div>${card.suit}</div>
+        `;
+    handContainer.appendChild(cardElement);
+  });
+}
 
-            playerHand = playerHand.filter(c => c !== card);
-            renderPlayerHand();
-        }
+document.getElementById('ready-button').addEventListener('click', function () {
+  socket.send('ready');
+  this.disabled = true;
+  this.textContent = 'Waiting for other players...';
+});
 
-        document.getElementById('startGame').onclick = () => {
-            createDeck();
-            shuffleDeck();
-            dealCards(8); // Start with 8 cards for simplicity
-            document.getElementById('playArea').innerHTML = '';
-        };
-
-        // Initialize the game
-        createDeck();
-        shuffleDeck();
-        dealCards(8);
+connectWebSocket();
