@@ -1,9 +1,6 @@
 const playerId = Math.random().toString(36).substr(2, 9);
 let socket;
 
-//TODO: display trump card
-//TODO: display played cards
-
 function connectWebSocket() {
   socket = new WebSocket(`ws://localhost:8000/ws/${playerId}`);
 
@@ -36,13 +33,13 @@ function displayCards(hand, id) {
   const handContainer = document.getElementById(id);
   switch (id) {
     case 'hand':
-      handContainer.innerHTML = '<h4>Your Hand\n</h4>';
+      handContainer.innerHTML = '<h4>Your Hand</h4>';
       break;
     case 'trump-card':
-      handContainer.innerHTML = '<h4>Trump Card\n</h4>';
+      handContainer.innerHTML = '<h4>Trump Card</h4>';
       break;
     case 'played-cards':
-      handContainer.innerHTML = `<h4>Play Area\n</h4>`;
+      handContainer.innerHTML = `<h4>Play Area</h4>`;
       break;
     default:
       throw new Error('Invalid id');

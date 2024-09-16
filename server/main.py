@@ -1,7 +1,7 @@
 import random
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel
 from typing import List, Literal, Optional, Dict
 
 # TODO: handle next turn and round correctly
