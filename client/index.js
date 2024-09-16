@@ -13,10 +13,13 @@ function connectWebSocket() {
   };
 
   socket.onmessage = function (event) {
-    const data = JSON.parse(JSON.parse(event.data));
-    displayHand(data.hand);
+    console.log(event.data);
+    const data = JSON.parse(event.data);
+    displayCards(data.trump_card, 'trump-card');
+    displayCards(data.hand, 'hand');
+    displayCards(data.played_cards, 'played-cards');
     document.getElementById('ready-button').style.display = 'none';
-    isMyTurn = data.turn
+    isMyTurn = data.turn;
   };
 
   socket.onclose = function (_) {
@@ -29,9 +32,21 @@ function connectWebSocket() {
   };
 }
 
-function displayHand(hand) {
-  const handContainer = document.getElementById('hand');
-  handContainer.innerHTML = '';
+function displayCards(hand, id) {
+  const handContainer = document.getElementById(id);
+  switch (id) {
+    case 'hand':
+      handContainer.innerHTML = '<h4>Your Hand\n</h4>';
+      break;
+    case 'trump-card':
+      handContainer.innerHTML = '<h4>Trump Card\n</h4>';
+      break;
+    case 'played-cards':
+      handContainer.innerHTML = `<h4>Play Area\n</h4>`;
+      break;
+    default:
+      throw new Error('Invalid id');
+  }
   hand.forEach(card => {
     const cardButton = document.createElement('button');
     cardButton.className = 'card';
@@ -40,7 +55,9 @@ function displayHand(hand) {
             <div>${card.value}</div>
             <div>${card.suit}</div>
         `;
-    cardButton.onclick = () => playCard(card);
+    if (id === "hand") {
+      cardButton.onclick = () => playCard(card);
+    }
     handContainer.appendChild(cardButton);
   });
 }

@@ -31,7 +31,9 @@ class Player(BaseModel):
     hand: Optional[List[Card]] = None
     bid: Optional[int] = None
     ready: bool = False
-    turn: bool = False
+    turn: bool = (
+        True  # for debugging, should be adaptively changed later and start as False
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -57,12 +59,13 @@ class Game:
         self.deck: list = basic_deck + jesters + wizards
         self.n_rounds: int = len(self.deck) // self.n_players
         self.players: dict = players
-        self.round_number: int = 1
+        self.round_number: int = 5  # for debugging, should be 1
         self.trump_card: Optional[Card] = None
-        self.played_cards: Dict[int, Card] = {}
+        self.played_cards: Dict[str, Card] = {}
 
-    def play_round(self) -> None:
-        pass
+    def play_card(self, player_id: str, card: Card) -> None:
+        self.played_cards[player_id] = card
+        self.players[player_id].play_card(card)
 
     def deal_cards(self) -> None:
         hands = random.sample(
@@ -73,6 +76,9 @@ class Game:
         for i, player in enumerate(self.players.values()):
             start = i * self.round_number
             player.hand = hands[start : start + self.round_number]
+
+    def round_done(self) -> bool:
+        return len(self.played_cards) == self.n_players
 
     def eval_round(
         self, played_cards: Dict[int, Card], player_order: Dict[int, Player]
@@ -109,9 +115,19 @@ class ConnectionManager:
         self.active_players.pop(player_id)
 
     async def send_state(self) -> None:
+        assert game, "Cannot send state before game has started."
         for player in self.active_players.values():
             await player.websocket.send_json(
-                player.model_dump_json(exclude={"websocket"})
+                {
+                    **player.model_dump(exclude={"websocket"}),
+                    "trump_card": [game.trump_card.model_dump()]
+                    if game.trump_card
+                    else "undefined",
+                    "played_cards": [
+                        {"player_id": player_id, **card.model_dump()}
+                        for player_id, card in game.played_cards.items()
+                    ],
+                }
             )
 
 
@@ -121,24 +137,24 @@ game = None
 
 @app.websocket("/ws/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
+    global game
     await manager.connect(player_id, websocket)
     try:
         while True:
             data = await websocket.receive_json()
-            print(data)
             match data["action"]:
                 case "ready":
                     manager.active_players[player_id].ready = True
-                    print(manager.active_players)
                     if all(player.ready for player in manager.active_players.values()):
-                        print("Everyone is ready")
                         game = Game(players=manager.active_players)
                         game.deal_cards()
                         await manager.send_state()
                 case "play_card":
-                    card = Card(**data.card)
-                    player = game.players[player_id]
-                    player.play_card(card)
+                    assert game, "Cannot play card before game has started."
+                    print(data["card"])
+                    card = Card(**data["card"])
+                    game.play_card(player_id, card)
+                    await manager.send_state()
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
