@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, PrivateAttr
 from typing import List, Literal, Optional, Dict
 
+# TODO: handle next turn and round correctly
 
 # init app
 app = FastAPI()
@@ -58,6 +59,7 @@ class Game:
         self.players: dict = players
         self.round_number: int = 1
         self.trump_card: Optional[Card] = None
+        self.played_cards: Dict[int, Card] = {}
 
     def play_round(self) -> None:
         pass
@@ -122,15 +124,21 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(player_id, websocket)
     try:
         while True:
-            data = await websocket.receive_text()
-            if data == "ready":
-                manager.active_players[player_id].ready = True
-                print(manager.active_players)
-                if all(player.ready for player in manager.active_players.values()):
-                    print("Everyone is ready")
-                    game = Game(players=manager.active_players)
-                    game.deal_cards()
-                    await manager.send_state()
+            data = await websocket.receive_json()
+            print(data)
+            match data["action"]:
+                case "ready":
+                    manager.active_players[player_id].ready = True
+                    print(manager.active_players)
+                    if all(player.ready for player in manager.active_players.values()):
+                        print("Everyone is ready")
+                        game = Game(players=manager.active_players)
+                        game.deal_cards()
+                        await manager.send_state()
+                case "play_card":
+                    card = Card(**data.card)
+                    player = game.players[player_id]
+                    player.play_card(card)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
