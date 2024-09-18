@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from typing import Literal, Optional
 
 # TODO: change player dict to just use a natural int ordering instead of strings to make things simpler
-# TODO: make bids
+# TODO: handle trump card being jester or wizard
+# TODO: Tricks get assigned wrong
 
 app = FastAPI()
 
@@ -40,7 +41,7 @@ class Player(BaseModel):
     websocket: WebSocket
     score: int = 0
     hand: list[Card] = []
-    bid: int = 0
+    bid: Optional[int] = None
     ready: bool = False
     turn: bool = False
     current_tricks: int = 0
@@ -59,6 +60,10 @@ class Player(BaseModel):
             and (suit in set(c.suit for c in self.hand))
         )
 
+    def make_playable(self):
+        for card in self.hand:
+            card.playable = True
+
 
 class Game:
     def __init__(self, players: dict) -> None:
@@ -69,7 +74,6 @@ class Game:
         self.player_order: dict[int, Player] = {
             i: p for i, p in enumerate(players.values())
         }
-        self.player_order[0].turn = True
         self.round_number: int = 5  # for debugging, should be 1
         self.trump_card: Optional[Card] = None
         self.played_cards: list[Card] = []
@@ -97,6 +101,16 @@ class Game:
             start = i * self.round_number
             player.hand = sorted(hands[start : start + self.round_number])
 
+        self.player_order[(self.round_number - 1) % self.n_players].turn = True
+
+    def bidding_done(self):
+        return all(player.bid is not None for player in self.players.values())
+
+    def next_bid(self) -> None:
+        i = self._current_player()
+        self.player_order[i].turn = False
+        self.player_order[(i + 1) % self.n_players].turn = True
+
     def play_card(self, player_id: str, card: Card) -> None:
         assert self.players[player_id], "This player cannot play cards now."
         self.played_cards.append(card)
@@ -123,6 +137,7 @@ class Game:
         winner = self.eval_trick()
         for player in self.players.values():
             player.turn = False
+            player.make_playable()
         self.played_cards = []
         winner.current_tricks += 1
         winner.turn = True  # the previous winner starts
@@ -130,16 +145,19 @@ class Game:
     def trick_done(self) -> bool:
         return len(self.played_cards) == self.n_players
 
+    def _played_suits(self) -> list[SuitType]:
+        return [c.suit for c in self.played_cards]
+
     def _get_suit_to_follow(self) -> SuitType:
-        played_suits: list[SuitType] = [c.suit for c in self.played_cards]
-        return next(iter(suit for suit in played_suits if suit != "jester"), "jester")
+        return next(
+            iter(suit for suit in self._played_suits() if suit != "jester"), "jester"
+        )
 
     def _winning_suit(self) -> SuitType:
         assert self.trump_card, "Trump card not set"  # to shut up pyright
-        played_suits: list[SuitType] = [c.suit for c in self.played_cards]
-        if "wizard" in played_suits:
+        if "wizard" in self._played_suits():
             return "wizard"
-        if self.trump_card.suit in played_suits:
+        if self.trump_card.suit in self._played_suits():
             return self.trump_card.suit
         else:
             return self._get_suit_to_follow()
@@ -160,11 +178,14 @@ class Game:
         self.round_number += 1
         for player in self.players.values():
             player.current_tricks = 0
-            player.bid = 0
+            player.bid = None
+            player.turn = False
+
         self.deal_cards()
 
     def eval_round(self) -> None:
         for player in self.players.values():
+            assert player.bid is not None, "A player needs to bid before playing."
             diff = abs(player.current_tricks - player.bid)
             if diff == 0:
                 player.score += 20 + player.current_tricks * 10
@@ -181,8 +202,8 @@ class ConnectionManager:
         await websocket.accept()
         self.active_players[player_id] = Player(websocket=websocket)
 
-    def disconnect(self, player_id):
-        self.active_players.pop(player_id)
+    def disconnect(self, player_id: str):
+        self.active_players.pop(player_id, None)
 
     async def send_state(self) -> None:
         assert game, "Cannot send state before game has started."
@@ -197,6 +218,8 @@ class ConnectionManager:
                         {"player_id": "", **card.model_dump()}
                         for card in game.played_cards
                     ],
+                    "bidding": not game.bidding_done(),
+                    "n_round": game.round_number,
                 }
             )
 
@@ -219,8 +242,17 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                         game = Game(players=manager.active_players)
                         game.deal_cards()
                         await manager.send_state()
+                case "bid":
+                    assert game, "Cannot bid before game has started."
+                    game.players[player_id].bid = data["n_tricks"]
+                    if not game.bidding_done():
+                        game.next_bid()
+                    await manager.send_state()
                 case "play_card":
                     assert game, "Cannot play card before game has started."
+                    assert (
+                        game.bidding_done()
+                    ), "Cannot play card until bidding is done."
                     card = Card(**data["card"])
                     assert card.playable, "This card cannot be played."
                     game.play_card(player_id, card)
@@ -228,8 +260,9 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                         game.next_trick()
                         if not game.players[player_id].hand:
                             game.next_round()
-
                     await manager.send_state()
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(player_id)
+        if not manager.active_players:
+            game = None

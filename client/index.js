@@ -1,8 +1,6 @@
 const playerId = Math.random().toString(36).substr(2, 9);
 let socket;
 
-// TODO: show the last card being played
-
 function connectWebSocket() {
   socket = new WebSocket(`ws://localhost:8000/ws/${playerId}`);
 
@@ -20,8 +18,34 @@ function connectWebSocket() {
     document.getElementById('ready-button').style.display = 'none';
     isMyTurn = data.turn;
     document.getElementById('score').innerHTML = `<h4>Your Score</h4><div>${data.score}</div>`
-    document.getElementById('bid').innerHTML = `<h4>Your Bid</h4><div>${data.bid}</div>`
-    document.getElementById('tricks').innerHTML = `<h4>Your Tricks</h4><div>${data.current_tricks}</div>`
+    bidding = data.bidding;
+    if (data.bid !== null) {
+      document.getElementById('bid').innerHTML = `<h4>Your Bid</h4><div>${data.bid}</div>`
+      document.getElementById('tricks').innerHTML = `<h4>Your Tricks</h4><div>${data.current_tricks}</div>`
+    }
+    else {
+      const bid_container = document.getElementById('bid');
+      bid_container.innerHTML = ``;
+      const label = document.createElement('label');
+      label.for = 'bid-selector';
+      label.textContent = "Make your bid:"
+      const bid_select = document.createElement('select');
+      bid_select.id = 'bid-selector';
+      for (let i = 0; i <= data.n_round; i++) {
+        const option = document.createElement('option');
+        option.value = i;
+        option.text = i;
+        bid_select.appendChild(option);
+      }
+      const bid_button = document.createElement('button');
+      bid_button.textContent = 'Submit Bid';
+      bid_button.onclick = submitBid;
+      document.getElementById('bid').append(bid_select);
+      document.getElementById('bid').append(bid_button);
+      if (!isMyTurn) {
+        bid_button.disabled = true;
+      }
+    }
   };
 
   socket.onclose = function (_) {
@@ -74,6 +98,18 @@ function playCard(card) {
       card: card
     }));
   }
+}
+
+function submitBid() {
+  const bidSelect = document.getElementById('bid-selector');
+  const selectedBid = bidSelect.value;
+  socket.send(JSON.stringify({
+    action: 'bid',
+    n_tricks: parseInt(selectedBid)
+  }));
+  // Disable the select and button after submitting
+  bidSelect.disabled = true;
+  this.disabled = true;
 }
 
 document.getElementById('ready-button').addEventListener('click', function () {
