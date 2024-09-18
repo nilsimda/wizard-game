@@ -17,8 +17,9 @@ function connectWebSocket() {
     displayCards(data.played_cards, 'played-cards');
     document.getElementById('ready-button').style.display = 'none';
     isMyTurn = data.turn;
-    tricks = data.current_tricks;
-    document.getElementById('tricks').innerHTML = `<h4>Your Tricks</h4><div>${tricks}</div>`
+    document.getElementById('score').innerHTML = `<h4>Your Score</h4><div>${data.score}</div>`
+    document.getElementById('bid').innerHTML = `<h4>Your Bid</h4><div>${data.bid}</div>`
+    document.getElementById('tricks').innerHTML = `<h4>Your Tricks</h4><div>${data.current_tricks}</div>`
   };
 
   socket.onclose = function (_) {

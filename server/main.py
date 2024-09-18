@@ -6,7 +6,6 @@ from typing import Literal, Optional
 
 # TODO: change player dict to just use a natural int ordering instead of strings to make things simpler
 # TODO: send playable attr with each card
-# TODO: deal new cards once round is done
 # TODO: make bids
 
 app = FastAPI()
@@ -34,7 +33,7 @@ class Player(BaseModel):
     websocket: WebSocket
     score: int = 0
     hand: Optional[list[Card]] = None
-    bid: Optional[int] = None
+    bid: int = 0
     ready: bool = False
     turn: bool = False
     current_tricks: int = 0
@@ -132,6 +131,22 @@ class Game:
 
         return self.player_order[(self._current_player() + winning_n) % self.n_players]
 
+    def next_round(self) -> None:
+        self.eval_round()
+        self.round_number += 1
+        for player in self.players.values():
+            player.current_tricks = 0
+            player.bid = 0
+        self.deal_cards()
+
+    def eval_round(self) -> None:
+        for player in self.players.values():
+            diff = abs(player.current_tricks - player.bid)
+            if diff == 0:
+                player.score += 20 + player.current_tricks * 10
+            else:
+                player.score -= diff * 10
+
 
 # used to handle the socket connections
 class ConnectionManager:
@@ -187,6 +202,9 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     game.play_card(player_id, card)
                     if game.trick_done():
                         game.next_trick()
+                        if not game.players[player_id].hand:
+                            game.next_round()
+
                     await manager.send_state()
 
     except WebSocketDisconnect:
