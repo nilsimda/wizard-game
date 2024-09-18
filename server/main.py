@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from typing import Literal, Optional
 
 # TODO: change player dict to just use a natural int ordering instead of strings to make things simpler
-# TODO: define ordering of cards and send them sorted
 # TODO: make bids
 
 app = FastAPI()
@@ -19,6 +18,7 @@ app.add_middleware(
 )
 
 SuitType = Literal["jester", "blue", "green", "yellow", "wizard", "red"]
+color_order = {"jester": 0, "yellow": 1, "red": 1, "blue": 3, "green": 4, "wizard": 5}
 
 
 class Card(BaseModel):
@@ -28,6 +28,12 @@ class Card(BaseModel):
 
     def __eq__(self, other):
         return other.suit == self.suit and other.value == self.value
+
+    def __lt__(self, other):
+        if self.suit == other.suit:
+            return self.value < other.value
+        else:
+            return color_order[self.suit] < color_order[other.suit]
 
 
 class Player(BaseModel):
@@ -89,7 +95,7 @@ class Game:
         self.trump_card = hands.pop()
         for i, player in enumerate(self.players.values()):
             start = i * self.round_number
-            player.hand = hands[start : start + self.round_number]
+            player.hand = sorted(hands[start : start + self.round_number])
 
     def play_card(self, player_id: str, card: Card) -> None:
         assert self.players[player_id], "This player cannot play cards now."

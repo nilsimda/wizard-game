@@ -1,6 +1,8 @@
 const playerId = Math.random().toString(36).substr(2, 9);
 let socket;
 
+// TODO: show the last card being played
+
 function connectWebSocket() {
   socket = new WebSocket(`ws://localhost:8000/ws/${playerId}`);
 
