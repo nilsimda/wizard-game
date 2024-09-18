@@ -51,11 +51,14 @@ function displayCards(hand, id) {
     const cardButton = document.createElement('button');
     cardButton.className = 'card';
     cardButton.style.backgroundColor = card.suit;
+    if (!card.playable) {
+      cardButton.style.opacity = 0.5;
+    }
     cardButton.innerHTML = `
             <div>${card.value}</div>
             <div>${card.suit}</div>
         `;
-    if (id === "hand") {
+    if (id === "hand" && card.playable) {
       cardButton.onclick = () => playCard(card);
     }
     handContainer.appendChild(cardButton);

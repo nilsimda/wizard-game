@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Literal, Optional
 
 # TODO: change player dict to just use a natural int ordering instead of strings to make things simpler
-# TODO: send playable attr with each card
+# TODO: define ordering of cards and send them sorted
 # TODO: make bids
 
 app = FastAPI()
@@ -24,6 +24,7 @@ SuitType = Literal["jester", "blue", "green", "yellow", "wizard", "red"]
 class Card(BaseModel):
     value: int
     suit: SuitType
+    playable: bool = True
 
     def __eq__(self, other):
         return other.suit == self.suit and other.value == self.value
@@ -32,7 +33,7 @@ class Card(BaseModel):
 class Player(BaseModel):
     websocket: WebSocket
     score: int = 0
-    hand: Optional[list[Card]] = None
+    hand: list[Card] = []
     bid: int = 0
     ready: bool = False
     turn: bool = False
@@ -44,6 +45,13 @@ class Player(BaseModel):
     def play_card(self, card: Card):
         if self.hand and self.turn and (card in self.hand):
             self.hand.remove(card)
+
+    def can_follow_suit(self, suit: SuitType):
+        return (
+            suit != "jester"
+            and suit != "wizard"
+            and (suit in set(c.suit for c in self.hand))
+        )
 
 
 class Game:
@@ -95,7 +103,15 @@ class Game:
     def next_turn(self) -> None:
         current_player = self._current_player()
         self.player_order[current_player].turn = False
-        self.player_order[(current_player + 1) % self.n_players].turn = True
+        for c in self.player_order[current_player].hand:
+            c.playable = True
+        next_player = (current_player + 1) % self.n_players
+        self.player_order[next_player].turn = True
+        suit = self._get_suit_to_follow()
+        if self.player_order[next_player].can_follow_suit(suit):
+            for c in self.player_order[next_player].hand:
+                if suit != c.suit and c.suit != "wizard" and c.suit != "jester":
+                    c.playable = False
 
     def next_trick(self) -> None:
         winner = self.eval_trick()
@@ -108,6 +124,10 @@ class Game:
     def trick_done(self) -> bool:
         return len(self.played_cards) == self.n_players
 
+    def _get_suit_to_follow(self) -> SuitType:
+        played_suits: list[SuitType] = [c.suit for c in self.played_cards]
+        return next(iter(suit for suit in played_suits if suit != "jester"), "jester")
+
     def _winning_suit(self) -> SuitType:
         assert self.trump_card, "Trump card not set"  # to shut up pyright
         played_suits: list[SuitType] = [c.suit for c in self.played_cards]
@@ -115,10 +135,8 @@ class Game:
             return "wizard"
         if self.trump_card.suit in played_suits:
             return self.trump_card.suit
-        else:  # why does pyright complain about this?
-            return next(
-                iter(suit for suit in played_suits if suit != "jester"), "jester"
-            )
+        else:
+            return self._get_suit_to_follow()
 
     def eval_trick(self) -> Player:
         winning_suit = self._winning_suit()
@@ -197,8 +215,8 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                         await manager.send_state()
                 case "play_card":
                     assert game, "Cannot play card before game has started."
-                    print(data["card"])
                     card = Card(**data["card"])
+                    assert card.playable, "This card cannot be played."
                     game.play_card(player_id, card)
                     if game.trick_done():
                         game.next_trick()
