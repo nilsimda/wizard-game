@@ -17,6 +17,8 @@ function connectWebSocket() {
     displayCards(data.played_cards, 'played-cards');
     document.getElementById('ready-button').style.display = 'none';
     isMyTurn = data.turn;
+    tricks = data.current_tricks;
+    document.getElementById('tricks').innerHTML = `<h4>Your Tricks</h4><div>${tricks}</div>`
   };
 
   socket.onclose = function (_) {

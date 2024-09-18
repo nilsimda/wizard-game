@@ -2,11 +2,13 @@ import random
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Literal, Optional, Dict
+from typing import Literal, Optional
 
-# TODO: handle next turn and round correctly
+# TODO: change player dict to just use a natural int ordering instead of strings to make things simpler
+# TODO: send playable attr with each card
+# TODO: deal new cards once round is done
+# TODO: make bids
 
-# init app
 app = FastAPI()
 
 app.add_middleware(
@@ -17,23 +19,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SuitType = Literal["red", "blue", "green", "yellow", "wizard", "jester"]
+SuitType = Literal["jester", "blue", "green", "yellow", "wizard", "red"]
 
 
 class Card(BaseModel):
     value: int
     suit: SuitType
 
+    def __eq__(self, other):
+        return other.suit == self.suit and other.value == self.value
+
 
 class Player(BaseModel):
     websocket: WebSocket
     score: int = 0
-    hand: Optional[List[Card]] = None
+    hand: Optional[list[Card]] = None
     bid: Optional[int] = None
     ready: bool = False
-    turn: bool = (
-        True  # for debugging, should be adaptively changed later and start as False
-    )
+    turn: bool = False
+    current_tricks: int = 0
 
     class Config:
         arbitrary_types_allowed = True
@@ -46,6 +50,18 @@ class Player(BaseModel):
 class Game:
     def __init__(self, players: dict) -> None:
         self.n_players: int = len(players)
+        self.deck: list[Card] = self._create_deck()
+        self.n_rounds: int = len(self.deck) // self.n_players
+        self.players: dict[str, Player] = players
+        self.player_order: dict[int, Player] = {
+            i: p for i, p in enumerate(players.values())
+        }
+        self.player_order[0].turn = True
+        self.round_number: int = 5  # for debugging, should be 1
+        self.trump_card: Optional[Card] = None
+        self.played_cards: list[Card] = []
+
+    def _create_deck(self) -> list[Card]:
         suit_options: list = ["red", "blue", "green", "yellow"]
         basic_deck: list = [
             Card(value=value, suit=suit)
@@ -56,16 +72,7 @@ class Game:
             [Card(value=0, suit="jester") for _ in range(4)],
             [Card(value=14, suit="wizard") for _ in range(4)],
         )
-        self.deck: list = basic_deck + jesters + wizards
-        self.n_rounds: int = len(self.deck) // self.n_players
-        self.players: dict = players
-        self.round_number: int = 5  # for debugging, should be 1
-        self.trump_card: Optional[Card] = None
-        self.played_cards: Dict[str, Card] = {}
-
-    def play_card(self, player_id: str, card: Card) -> None:
-        self.played_cards[player_id] = card
-        self.players[player_id].play_card(card)
+        return basic_deck + jesters + wizards
 
     def deal_cards(self) -> None:
         hands = random.sample(
@@ -77,29 +84,53 @@ class Game:
             start = i * self.round_number
             player.hand = hands[start : start + self.round_number]
 
-    def round_done(self) -> bool:
+    def play_card(self, player_id: str, card: Card) -> None:
+        assert self.players[player_id], "This player cannot play cards now."
+        self.played_cards.append(card)
+        self.players[player_id].play_card(card)
+        self.next_turn()
+
+    def _current_player(self) -> int:
+        return next(iter(i for i in self.player_order if self.player_order[i].turn))
+
+    def next_turn(self) -> None:
+        current_player = self._current_player()
+        self.player_order[current_player].turn = False
+        self.player_order[(current_player + 1) % self.n_players].turn = True
+
+    def next_trick(self) -> None:
+        winner = self.eval_trick()
+        for player in self.players.values():
+            player.turn = False
+        self.played_cards = []
+        winner.current_tricks += 1
+        winner.turn = True  # the previous winner starts
+
+    def trick_done(self) -> bool:
         return len(self.played_cards) == self.n_players
 
-    def eval_round(
-        self, played_cards: Dict[int, Card], player_order: Dict[int, Player]
-    ) -> Player:
-        played_suits = list(map(lambda c: c.suit, played_cards.values()))
-        assert self.trump_card, "Trump card not set"
-
-        winning_suit = (
-            "wizard"
-            if "wizard" in played_suits
-            else (
-                self.trump_card.suit
-                if self.trump_card.suit in played_suits
-                else played_cards[0].suit
+    def _winning_suit(self) -> SuitType:
+        assert self.trump_card, "Trump card not set"  # to shut up pyright
+        played_suits: list[SuitType] = [c.suit for c in self.played_cards]
+        if "wizard" in played_suits:
+            return "wizard"
+        if self.trump_card.suit in played_suits:
+            return self.trump_card.suit
+        else:  # why does pyright complain about this?
+            return next(
+                iter(suit for suit in played_suits if suit != "jester"), "jester"
             )
+
+    def eval_trick(self) -> Player:
+        winning_suit = self._winning_suit()
+        winning_value = max(
+            card.value for card in self.played_cards if card.suit == winning_suit
         )
-        winning_n = min(
-            (n for n, card in played_cards.items() if card.suit == winning_suit)
+        winning_n = self.played_cards.index(
+            Card(value=winning_value, suit=winning_suit)
         )
 
-        return player_order[winning_n]
+        return self.player_order[(self._current_player() + winning_n) % self.n_players]
 
 
 # used to handle the socket connections
@@ -124,8 +155,8 @@ class ConnectionManager:
                     if game.trump_card
                     else "undefined",
                     "played_cards": [
-                        {"player_id": player_id, **card.model_dump()}
-                        for player_id, card in game.played_cards.items()
+                        {"player_id": "", **card.model_dump()}
+                        for card in game.played_cards
                     ],
                 }
             )
@@ -154,6 +185,8 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     print(data["card"])
                     card = Card(**data["card"])
                     game.play_card(player_id, card)
+                    if game.trick_done():
+                        game.next_trick()
                     await manager.send_state()
 
     except WebSocketDisconnect:
