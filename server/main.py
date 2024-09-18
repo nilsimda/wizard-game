@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 # TODO: change player dict to just use a natural int ordering instead of strings to make things simpler
 # TODO: handle trump card being jester or wizard
-# TODO: Tricks get assigned wrong
+# TODO: game end
 
 app = FastAPI()
 

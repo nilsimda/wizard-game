@@ -1,3 +1,7 @@
+// TODO: show other peoples bids
+// TODO: show last card played
+// TODO: improve UI (move to react?)
+
 const playerId = Math.random().toString(36).substr(2, 9);
 let socket;
 
@@ -12,13 +16,13 @@ function connectWebSocket() {
   socket.onmessage = function (event) {
     console.log(event.data);
     const data = JSON.parse(event.data);
+    bidding = data.bidding;
     displayCards(data.trump_card, 'trump-card');
     displayCards(data.hand, 'hand');
     displayCards(data.played_cards, 'played-cards');
     document.getElementById('ready-button').style.display = 'none';
     isMyTurn = data.turn;
     document.getElementById('score').innerHTML = `<h4>Your Score</h4><div>${data.score}</div>`
-    bidding = data.bidding;
     if (data.bid !== null) {
       document.getElementById('bid').innerHTML = `<h4>Your Bid</h4><div>${data.bid}</div>`
       document.getElementById('tricks').innerHTML = `<h4>Your Tricks</h4><div>${data.current_tricks}</div>`
@@ -84,7 +88,7 @@ function displayCards(hand, id) {
             <div>${card.value}</div>
             <div>${card.suit}</div>
         `;
-    if (id === "hand" && card.playable) {
+    if (!bidding && id === "hand" && card.playable) {
       cardButton.onclick = () => playCard(card);
     }
     handContainer.appendChild(cardButton);
